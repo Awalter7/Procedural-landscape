@@ -456,7 +456,7 @@ export class Terrain extends THREE.MeshPhysicalMaterial {
                     float topDownFactor = clamp(dot(N, worldUp), 0.0, 1.0);
                     float rockFacing = clamp(dot(rockNormal , worldUp), 0.0, 1.0);
 
-                    float rockCrackFactor = derivativeScreenSpace(rockNormal, .5, 1.0);
+                    //float rockCrackFactor = derivativeScreenSpace(rockNormal, .3, 1.0);
 
 
                     // vec3 stoneColor = texture2D(uStoneDiff, fract(vUv * 20.0)).rgb;
@@ -477,7 +477,7 @@ export class Terrain extends THREE.MeshPhysicalMaterial {
 
                     
                     rockColor = mix(rockColor, mossColor, rockFacing );
-                    rockColor = mix(rockColor, mossColor, rockCrackFactor); 
+                    // rockColor = mix(rockColor, mossColor, rockCrackFactor); 
                     
 
                     vec3 groundAOCC = texture2D(uGroundAOCC, fract(vUv * 100.0)).rgb;

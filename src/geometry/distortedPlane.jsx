@@ -4,6 +4,14 @@ import seedrandom from "seedrandom";
 import { createNoise3D } from "simplex-noise";
 import Plane from "./plane";
 
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function lerp(a, b, t) {
+  return a + t * (b - a);
+}
+
 export default class DistortedPlane extends Component {
   constructor(props) {
     super(props);

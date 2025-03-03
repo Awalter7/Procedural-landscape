@@ -172,8 +172,8 @@ const Surface = () => {
         <DistortedPlane
           ref={geomRef}
           resolution={400}
-          height={1000}
-          width={1000}
+          height={400}
+          width={400}
         />
         {/* <meshPhysicalMaterial map={rockNormal}/> */}
       </mesh>
