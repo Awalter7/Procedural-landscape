@@ -3,6 +3,7 @@ import * as THREE from "three";
 import seedrandom from "seedrandom";
 import { createNoise3D } from "simplex-noise";
 import Plane from "./plane";
+import {GPUCompute} from "../utils/compute"
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -11,6 +12,155 @@ function clamp(value, min, max) {
 function lerp(a, b, t) {
   return a + t * (b - a);
 }
+
+const computeDistortion = /* wgsl */ `
+struct DistortUniforms {
+  amplitude       : f32,
+  frequency       : f32,
+  offset          : f32,
+  distortHeight   : f32,
+  exponentiation  : f32,
+  lacunarity      : f32,
+  octaves         : u32,
+  posX            : f32,
+  posY            : f32,
+  maxHeight       : f32,
+  count           : u32,
+  _padding        : f32,  // <--- extra float to reach 48 bytes (multiple of 16)
+}
+
+@group(0) @binding(0) var<uniform> uniforms : DistortUniforms;
+
+// originalPositions is [x0,y0,z0, x1,y1,z1, ...]
+@group(0) @binding(1) var<storage, read> originalPositions : array<f32>;
+
+// outPositions is [x0,y0,z0, x1,y1,z1, ...]
+@group(0) @binding(2) var<storage, read_write> outPositions : array<f32>;
+
+fn permute4(x: vec4f) -> vec4f { return ((x * 34. + 1.) * x) % vec4f(289.); }
+fn fade2(t: vec2f) -> vec2f { return t * t * t * (t * (t * 6. - 15.) + 10.); }
+
+fn perlinNoise2(P: vec2f) -> f32 {
+    var Pi: vec4f = floor(P.xyxy) + vec4f(0., 0., 1., 1.);
+    let Pf = fract(P.xyxy) - vec4f(0., 0., 1., 1.);
+    Pi = Pi % vec4f(289.); // To avoid truncation effects in permutation
+    let ix = Pi.xzxz;
+    let iy = Pi.yyww;
+    let fx = Pf.xzxz;
+    let fy = Pf.yyww;
+    let i = permute4(permute4(ix) + iy);
+    var gx: vec4f = 2. * fract(i * 0.0243902439) - 1.; // 1/41 = 0.024...
+    let gy = abs(gx) - 0.5;
+    let tx = floor(gx + 0.5);
+    gx = gx - tx;
+    var g00: vec2f = vec2f(gx.x, gy.x);
+    var g10: vec2f = vec2f(gx.y, gy.y);
+    var g01: vec2f = vec2f(gx.z, gy.z);
+    var g11: vec2f = vec2f(gx.w, gy.w);
+    let norm = 1.79284291400159 - 0.85373472095314 *
+        vec4f(dot(g00, g00), dot(g01, g01), dot(g10, g10), dot(g11, g11));
+    g00 = g00 * norm.x;
+    g01 = g01 * norm.y;
+    g10 = g10 * norm.z;
+    g11 = g11 * norm.w;
+    let n00 = dot(g00, vec2f(fx.x, fy.x));
+    let n10 = dot(g10, vec2f(fx.y, fy.y));
+    let n01 = dot(g01, vec2f(fx.z, fy.z));
+    let n11 = dot(g11, vec2f(fx.w, fy.w));
+    let fade_xy = fade2(Pf.xy);
+    let n_x = mix(vec2f(n00, n01), vec2f(n10, n11), vec2f(fade_xy.x));
+    let n_xy = mix(n_x.x, n_x.y, fade_xy.y);
+    return 2.3 * n_xy;
+}
+
+fn fractalNoise(point: vec3<f32>) -> f32 {
+  var sum = 0.0;
+  var amp = uniforms.amplitude;
+  var freq = uniforms.frequency;
+
+  for (var i = 0u; i < 6; i++) {
+    let samplePoint = point * (freq / uniforms.offset);
+    let n = perlinNoise2(vec2<f32>(samplePoint.x + uniforms.posX, samplePoint.z + uniforms.posY));
+
+    let ridge = pow(1.0 - abs(n), 2.0);
+    sum = sum + ridge * amp;
+
+    amp  = amp  * 0.2;
+    freq = freq * uniforms.lacunarity;
+  }
+  return pow(sum, uniforms.exponentiation) * uniforms.distortHeight;
+}
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) global_id : vec3<u32>) {
+  let i = global_id.x;
+  if (i >= uniforms.count) {
+    return;
+  }
+
+  let idx = i * 3u;
+  let x = originalPositions[idx + 0u];
+  let y = originalPositions[idx + 1u];
+  let z = originalPositions[idx + 2u];
+
+  let basePoint = vec3<f32>(x, y, z);
+
+  // // Sample noise multiple times, as your CPU code does:
+  let noiseA = fractalNoise(basePoint);
+  // let pointA = basePoint + vec3<f32>(0.0, noiseA, 0.0);
+
+  // let noiseB = fractalNoise(pointA);
+  // let pointB = basePoint + vec3<f32>(0.0, noiseB, 0.0);
+
+  // let noiseC = fractalNoise(pointB);
+
+  var totalNoise = perlinNoise2(vec2<f32>(basePoint.x + uniforms.posX, basePoint.z + uniforms.posY));
+  if (totalNoise > uniforms.maxHeight) {
+    totalNoise = uniforms.maxHeight;
+  }
+
+  outPositions[idx + 0u] = x;
+  outPositions[idx + 1u] = y + noiseA;
+  outPositions[idx + 2u] = z;
+}
+`;
+
+const computeUVFunction = /* wgsl */ `
+  struct Uniforms {
+    bboxMin : vec2<f32>,
+    bboxMax : vec2<f32>,
+    count   : u32,
+    _pad    : u32,    // <--- 4-byte padding
+  }
+
+  @group(0) @binding(0) var<uniform> uniforms : Uniforms;
+
+  // positions is an array of floats [x0,y0,z0, ...]
+  @group(0) @binding(1) var<storage, read> positions : array<f32>;
+
+  // uvs is an array of floats [u0,v0, u1,v1, ...]
+  @group(0) @binding(2) var<storage, read_write> uvs : array<f32>;
+
+  @compute @workgroup_size(64)
+  fn main(@builtin(global_invocation_id) global_id : vec3<u32>) {
+    let i = global_id.x;
+    if (i >= uniforms.count) {
+      return;
+    }
+
+    let posIndex = i * 3u;
+    let x = positions[posIndex];
+    let z = positions[posIndex + 2u];
+
+    // Notice we now use uniforms.bboxMin.x, uniforms.bboxMax.x, etc.
+    let u = (x - uniforms.bboxMin.x) / (uniforms.bboxMax.x - uniforms.bboxMin.x);
+    let v = (z - uniforms.bboxMin.y) / (uniforms.bboxMax.y - uniforms.bboxMin.y);
+
+    let uvIndex = i * 2u;
+    uvs[uvIndex]     = u;
+    uvs[uvIndex + 1] = v;
+  }
+`;
 
 export default class DistortedPlane extends Component {
   constructor(props) {
@@ -42,7 +192,27 @@ export default class DistortedPlane extends Component {
       width: this.width,
     }).geometry;
 
+    this.geomComputeInstance = new GPUCompute();
+    this.UVComputeInstance = new GPUCompute();
+
+
+    this.initGeomCompute();
+    this.initUVCompute();
+    // this.computeUVs();
+  }
+
+
+  async initGeomCompute(){
+    this.geomComputeInstance.code = computeDistortion;
+    await this.geomComputeInstance.init(); 
+
     this.distort();
+  }
+
+  async initUVCompute(){
+    this.UVComputeInstance.code = computeUVFunction;
+    await this.UVComputeInstance.init();
+
     this.computeUVs();
   }
 
@@ -52,8 +222,7 @@ export default class DistortedPlane extends Component {
 
   set amplitude(value) {
     this._amplitude = value;
-    this.distort();
-    this.computeUVs();
+    this.scheduleUpdate();
   }
 
   get frequency() {
@@ -62,8 +231,7 @@ export default class DistortedPlane extends Component {
 
   set frequency(value) {
     this._frequency = value;
-    this.distort();
-    this.computeUVs();
+    this.scheduleUpdate();
   }
 
   get offset() {
@@ -72,8 +240,7 @@ export default class DistortedPlane extends Component {
 
   set offset(value) {
     this._offset = value;
-    this.distort();
-    this.computeUVs();
+    this.scheduleUpdate();
   }
 
   get distortHeight() {
@@ -82,8 +249,7 @@ export default class DistortedPlane extends Component {
 
   set distortHeight(value) {
     this._distortHeight = value;
-    this.distort();
-    this.computeUVs();
+    this.scheduleUpdate();
   }
 
   get exponentiation() {
@@ -92,8 +258,7 @@ export default class DistortedPlane extends Component {
 
   set exponentiation(value) {
     this._exponentiation = value;
-    this.distort();
-    this.computeUVs();
+    this.scheduleUpdate();
   }
 
   get lacunarity() {
@@ -102,8 +267,7 @@ export default class DistortedPlane extends Component {
 
   set lacunarity(value) {
     this._lacunarity = value;
-    this.distort();
-    this.computeUVs();
+    this.scheduleUpdate();
   }
 
   get octaves() {
@@ -112,8 +276,7 @@ export default class DistortedPlane extends Component {
 
   set octaves(value) {
     this._octaves = value;
-    this.distort();
-    this.computeUVs();
+    this.scheduleUpdate();
   }
 
   get posX() {
@@ -122,8 +285,7 @@ export default class DistortedPlane extends Component {
 
   set posX(value) {
     this._posX = value;
-    this.distort();
-    this.computeUVs();
+    this.scheduleUpdate();
   }
 
   get posY() {
@@ -132,8 +294,7 @@ export default class DistortedPlane extends Component {
 
   set posY(value) {
     this._posY = value;
-    this.distort();
-    this.computeUVs();
+    this.scheduleUpdate();
   }
 
   get maxHeight() {
@@ -142,139 +303,178 @@ export default class DistortedPlane extends Component {
 
   set maxHeight(value) {
     this._maxHeight = value;
-    this.distort();
-    this.computeUVs();
+    this.scheduleUpdate();
   }
 
-  fractalNoise(point) {
-    let noiseSum = 0.0;
+  scheduleUpdate(delay = 10) {
+    if (this._updateTimeout) {
+      clearTimeout(this._updateTimeout);
+    }
+    this._updateTimeout = setTimeout(() => {
+      this.distort();
+      this.computeUVs();
+    }, delay);
+  }
 
-    let amplitude = this._amplitude;
-    let frequency = this._frequency;
 
-    for (let i = 0; i < this._octaves; i++) {
-      // Clone the point so we don't mutate the original vector.
-      const samplePoint = point
-        .clone()
-        .multiplyScalar(frequency / this._offset);
+  async computeUVs() {
+    try {
+      if (!this.geometry) return;
 
-      const n = this.noise(
-        samplePoint.x + this._posX,
-        samplePoint.y + this._posY,
-        samplePoint.z
+      this.geometry.computeBoundingBox();
+      const bbox = this.geometry.boundingBox;
+      const min = bbox.min;
+      const max = bbox.max;
+
+      const posArray = this.geometry.attributes.position.array;
+      const vertexCount = posArray.length / 3;
+
+      if (vertexCount === 0) {
+        console.warn("No vertices — skipping GPU distortion.");
+        return;
+      }
+
+      const uvArray = new Float32Array(vertexCount * 2);
+
+
+      const uniformData = new Float32Array([
+        min.x,
+        min.z,
+        max.x,
+        max.z,
+        vertexCount,
+        0, // <--- match _pad in WGSL
+      ]);
+
+      const uniformBufferInfo = {
+        label: "UVUniforms",
+        usage: "uniform",
+        data: uniformData,
+      };
+      const positionsBufferInfo = {
+        label: "Positions",
+        usage: "storage",
+        data: posArray, 
+      };
+      const uvsBufferInfo = {
+        label: "UVs",
+        usage: "storage",
+        data: uvArray, 
+      };
+
+
+      this.UVComputeInstance.createResources(
+        [uniformBufferInfo, positionsBufferInfo, uvsBufferInfo], "UVS"
       );
 
-      const ridge = Math.pow(1.0 - Math.abs(n), 2);
-      noiseSum += ridge * amplitude;
+      const workgroupCount = Math.ceil(vertexCount / 64);
 
-      amplitude *= 0.2;
-      frequency *= this._lacunarity;
-    }
+  
+      const resultBuffers = await this.UVComputeInstance.runComputePass(workgroupCount);
+      const computedUVs = resultBuffers[2].data;
 
-    return Math.pow(noiseSum, this._exponentiation) * this._distortHeight;
-  }
-
-  distorted(point) {
-    // Compute noise in several layers to simulate fractal noise
-    const noiseA = this.fractalNoise(point.clone());
-    const pointA = point.clone();
-
-    pointA.y += noiseA;
-
-    const noiseB = this.fractalNoise(pointA.clone());
-    const pointB = point.clone();
-
-    pointB.y += noiseB;
-
-    const noiseC = this.fractalNoise(pointB.clone());
-
-    // Instead of multiplying the entire vector (which leaves y at 0),
-    // we add the noise values to the Y coordinate.
-
-    const distortedPoint = point.clone();
-
-    if (noiseA + noiseB + noiseC <= this._maxHeight) {
-      distortedPoint.y += noiseA + noiseB + noiseC;
-    } else {
-      distortedPoint.y += this._maxHeight;
-    }
-
-    return distortedPoint;
-  }
-
-  computeUVs() {
-    this.geometry.computeBoundingBox();
-
-    const bbox = this.geometry.boundingBox;
-    // e.g. bbox.min.x, bbox.min.y, bbox.min.z
-    //      bbox.max.x, bbox.max.y, bbox.max.z
-
-    const positions = this.geometry.attributes.position.array;
-    const uvs = new Float32Array((positions.length / 3) * 2);
-
-    let uvIndex = 0;
-
-    // Identify which two axes should define (u, v).
-    // If your plane is oriented in XZ, you’ll use x, z
-    // If in XY, you’ll use x, y
-    // etc.
-    // for (let i = 0; i < positions.length; i += 3) {
-    //   const x = positions[i];
-    //   const y = positions[i + 1];
-    //   const z = positions[i + 2];
-
-    //   // Example: If your plane is in the XY plane:
-    //   const u = (x - bbox.min.x) / (bbox.max.x - bbox.min.x);
-    //   const v = (y - bbox.min.y) / (bbox.max.y - bbox.min.y);
-
-    //   uvs[uvIndex++] = u;
-    //   uvs[uvIndex++] = v;
-    // }
-    // let uvIndex = 0;
-    for (let i = 0; i < positions.length; i += 3) {
-      const x = positions[i];
-      const y = positions[i + 1]; // Not used for UV
-      const z = positions[i + 2];
-
-      // Map x from bbox.min.x ... bbox.max.x to [0..1]
-      const u = (x - bbox.min.x) / (bbox.max.x - bbox.min.x);
-
-      // Map z from bbox.min.z ... bbox.max.z to [0..1]
-      const v = (z - bbox.min.z) / (bbox.max.z - bbox.min.z);
-
-      uvs[uvIndex++] = u;
-      uvs[uvIndex++] = v;
-    }
-
-    this.geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
-  }
-
-  distort() {
-    if (!this.geometry) return;
-
-    const positions = this.geometry.attributes.originalPos.array;
-
-    const dPositions = [];
-
-    for (let i = 0; i < positions.length; i += 3) {
-      const point = new THREE.Vector3(
-        positions[i],
-        positions[i + 1],
-        positions[i + 2]
+      this.geometry.setAttribute(
+        "uv",
+        new THREE.BufferAttribute(computedUVs, 2)
       );
-      const dPoint = this.distorted(point);
-      dPositions[i] = dPoint.x;
-      dPositions[i + 1] = dPoint.y;
-      dPositions[i + 2] = dPoint.z;
+
+      this.geometry.attributes.uv.needsUpdate = true;
+    } catch (err) {
+      console.error("Error computing UVs on GPU:", err);
     }
+  }
 
-    this.geometry.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(dPositions, 3)
-    );
+  // computeUVs() {
+  //   this.geometry.computeBoundingBox();
 
-    this.geometry.computeVertexNormals();
-    this.geometry.attributes.position.needsUpdate = true;
+  //   const bbox = this.geometry.boundingBox;
+
+  //   const positions = this.geometry.attributes.position.array;
+  //   const uvs = new Float32Array((positions.length / 3) * 2);
+
+  //   let uvIndex = 0;
+
+  //   for (let i = 0; i < positions.length; i += 3) {
+  //     const x = positions[i];
+  //     const y = positions[i + 1]; // Not used for UV
+  //     const z = positions[i + 2];
+
+  //     // Map x from bbox.min.x ... bbox.max.x to [0..1]
+  //     const u = (x - bbox.min.x) / (bbox.max.x - bbox.min.x);
+
+  //     // Map z from bbox.min.z ... bbox.max.z to [0..1]
+  //     const v = (z - bbox.min.z) / (bbox.max.z - bbox.min.z);
+
+  //     uvs[uvIndex++] = u;
+  //     uvs[uvIndex++] = v;
+  //   }
+
+  //   this.geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+  // }
+
+  async distort() {
+    try {
+      if (!this.geometry) return;
+
+      const originalPositions = this.geometry.attributes.originalPos.array;
+      const vertexCount = originalPositions.length / 3;
+      const outPositions = new Float32Array(originalPositions.length);
+
+      
+      // computeInstance.code = computeDistortion;
+      // await computeInstance.init();
+
+      // -------------- FIXED: We now provide 12 floats (48 bytes) for DistortUniforms --------------
+      const uniformData = new Float32Array([
+        this._amplitude,
+        this._frequency,
+        this._offset,
+        this._distortHeight,
+        this._exponentiation,
+        this._lacunarity,
+        this._octaves,
+        this._posX,
+        this._posY,
+        this._maxHeight,
+        vertexCount,
+        0, // <-- The extra padding field
+      ]);
+
+      const distortUniformsBufferInfo = {
+        label: "DistortUniforms",
+        usage: "uniform",
+        data: uniformData,
+      };
+      const origPositionsBufferInfo = {
+        label: "OriginalPositions",
+        usage: "storage",
+        data: originalPositions,
+      };
+      const outPositionsBufferInfo = {
+        label: "OutPositions",
+        usage: "storage",
+        data: outPositions,
+      };
+
+      this.geomComputeInstance.createResources([
+        distortUniformsBufferInfo,
+        origPositionsBufferInfo,
+        outPositionsBufferInfo,
+      ], "Distort");
+
+      const workgroupCount = Math.ceil(vertexCount / 64);
+      const resultBuffers = await this.geomComputeInstance.runComputePass(workgroupCount);
+
+      const finalPositions = resultBuffers[2].data;
+      this.geometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(finalPositions, 3)
+      );
+      this.geometry.computeVertexNormals();
+      this.geometry.attributes.position.needsUpdate = true;
+    } catch (err) {
+      console.error("Error computing Distortion on GPU:", err);
+    }
   }
 
   computeCreases(geometry, angleThresholdDeg = 20) {

@@ -6,125 +6,83 @@ import * as THREE from "three";
 import DistortedPlane from "../geometry/distortedPlane";
 
 import { Terrain } from "../shaders/terrain";
-import InstanceScattering from "../components/instanceScattering";
-// import GrassChunk from "./InstancedGrass";
 
 import { useLoader } from "@react-three/fiber";
 
-import rockBaseCol from "../assets/terrain/textures/Stylized_Cliff_Rock_003_basecolor.png";
-import rockNormalCol from "../assets/terrain/textures/Stylized_Cliff_Rock_003_normal.png";
-import rockHeightCol from "../assets/terrain/textures/Stylized_Cliff_Rock_002_height.png";
-import rockAOCCColor from "../assets/terrain/textures/Stylized_Cliff_Rock_002_ambientOcclusion.jpg";
+import {
+  rockColor, 
+  rockNormal,
+  rockHeight,
+  rockAOCC,
 
-import stoneBaseCol from "../assets/terrain/textures/ground_with_rocks_02_color_2k.png";
-import stoneNormalCol from "../assets/terrain/textures/ground_with_rocks_02_normal_gl_2k.png";
-import stoneAOCCCol from "../assets/terrain/textures/ground_with_rocks_02_ambient_occlusion_2k.png";
+  stoneColor,
+  stoneNormal,
+  stoneHeight,
+  stoneAOCC,
 
-import groundBaseCol from "../assets/terrain/textures/ground_03_color_4k.png";
-import groundNormalCol from "../assets/terrain/textures/ground_03_normal_gl_4k.png";
-import groundHeightCol from "../assets/terrain/textures/ground_03_height_4k.png";
-import groundAOCCColor from "../assets/terrain/textures/ground_03_ambient_occlusion_4k.png";
+  groundColor,
+  groundNormal,
+  groundHeight,
+  groundAOCC,
 
-import grassBaseCol from "../assets/terrain/textures/grass_03_color_2k.png";
-import grassNormalCol from "../assets/terrain/textures/grass_03_normal_gl_2k.png";
-import grassHeightCol from "../assets/terrain/textures/grass_03_height_2k.png";
-import grassAOCCColor from "../assets/terrain/textures/grass_03_ambient_occlusion_2k.png";
+  grassColor,
+  grassNormal,
+  grassHeight,
+  grassAOCC,
 
-import mossBaseCol from "../assets/terrain/textures/Moss_Color.jpg";
+  mossColor,
+} from "../assets/terrain/textures/index"
 
-import smallRock from "../assets/terrain/models/small_rock.glb";
-import bushFlower from "../assets/terrain/models/bush_flower.glb";
-import floorFlower from "../assets/terrain/models/floor_flower.glb";
-
-//import grassDistribution from "../assets/Grass/Textures/distribution.png";
-//import grassAlpha from "../Assets/Grass/Textures/alpha_mask.png";
 
 import { useGLTF } from "@react-three/drei";
 
-const Rock = () => {
-  const gltf = useGLTF(smallRock);
-
-  return {
-    geometry: gltf.scene.children[0].geometry,
-    material: gltf.scene.children[0].material,
-  };
-};
-
-const BushFlower = () => {
-  const gltf = useGLTF(bushFlower);
-
-  return {
-    geometry: gltf.scene.children[0].geometry,
-    material: gltf.scene.children[0].material,
-  };
-};
-
-const FloorFlower = () => {
-  const gltf = useGLTF(floorFlower);
-
-  console.log(gltf.scene.children[0].geometry);
-  return {
-    geometry: gltf.scene.children[0].geometry,
-    material: gltf.scene.children[0].material,
-  };
-};
-
 const Surface = () => {
-  const rockDiff = useLoader(THREE.TextureLoader, rockBaseCol);
-  const rockNormal = useLoader(THREE.TextureLoader, rockNormalCol);
-  const rockHeight = useLoader(THREE.TextureLoader, rockHeightCol);
-  const rockAOCC = useLoader(THREE.TextureLoader, rockAOCCColor);
+  const rockDi = useLoader(THREE.TextureLoader, rockColor);
+  const rockNo = useLoader(THREE.TextureLoader, rockNormal);
+  const rockHe = useLoader(THREE.TextureLoader, rockHeight);
+  const rockAO = useLoader(THREE.TextureLoader, rockAOCC);
 
-  const stoneDiff = useLoader(THREE.TextureLoader, stoneBaseCol);
-  const stoneNormal = useLoader(THREE.TextureLoader, stoneNormalCol);
-  const stoneAOCC = useLoader(THREE.TextureLoader, stoneAOCCCol);
+  const stoneDi = useLoader(THREE.TextureLoader, stoneColor);
+  const stoneNo = useLoader(THREE.TextureLoader, stoneNormal);
+  const stoneAO = useLoader(THREE.TextureLoader, stoneAOCC);
 
-  const groundDiff = useLoader(THREE.TextureLoader, groundBaseCol);
-  const groundNormal = useLoader(THREE.TextureLoader, groundNormalCol);
-  const groundHeight = useLoader(THREE.TextureLoader, groundHeightCol);
-  const groundAOCC = useLoader(THREE.TextureLoader, groundAOCCColor);
+  const groundDi = useLoader(THREE.TextureLoader, groundColor);
+  const groundNo = useLoader(THREE.TextureLoader, groundNormal);
+  const groundHe = useLoader(THREE.TextureLoader, groundHeight);
+  const groundAO = useLoader(THREE.TextureLoader, groundAOCC);
 
-  const grassDiff = useLoader(THREE.TextureLoader, grassBaseCol);
-  const grassNormal = useLoader(THREE.TextureLoader, grassNormalCol);
-  const grassHeight = useLoader(THREE.TextureLoader, grassHeightCol);
-  const grassAOCC = useLoader(THREE.TextureLoader, grassAOCCColor);
+  const grassDi = useLoader(THREE.TextureLoader, grassColor);
+  const grassNo = useLoader(THREE.TextureLoader, grassNormal);
+  const grassHe = useLoader(THREE.TextureLoader, grassHeight);
+  const grassAO = useLoader(THREE.TextureLoader, grassAOCC);
 
-  const mossDiff = useLoader(THREE.TextureLoader, mossBaseCol);
-
-  // const grassDistributionMap = useLoader(
-  //THREE.TextureLoader,
-  //grassDistribution
-  //);
-  //const grassAlphaMask = useLoader(THREE.TextureLoader, grassAlpha);
+  const mossDi = useLoader(THREE.TextureLoader, mossColor);
 
   const materialRef = useRef(
     new Terrain({
-      rockDiff: rockDiff,
-      rockNormal: rockNormal,
-      rockHeight: rockHeight,
-      rockAOCC: rockAOCC,
+      rockDiff: rockDi,
+      rockNormal: rockNo,
+      rockHeight: rockHe,
+      rockAOCC: rockAO,
 
-      stoneDiff: stoneDiff,
-      stoneNormal: stoneNormal,
-      stoneAOCC: stoneAOCC,
+      stoneDiff: stoneDi,
+      stoneNormal: stoneNo,
+      stoneAOCC: stoneAO,
 
-      groundDiff: groundDiff,
-      groundNormal: groundNormal,
-      groundHeight: groundHeight,
-      groundAOCC: groundAOCC,
+      groundDiff: groundDi,
+      groundNormal: groundNo,
+      groundHeight: groundHe,
+      groundAOCC: groundAO,
 
-      grassDiff: grassDiff,
-      grassNormal: grassNormal,
-      grassHeight: grassHeight,
-      grassAOCC: grassAOCC,
+      grassDiff: grassDi,
+      grassNormal: grassNo,
+      grassHeight: grassHe,
+      grassAOCC: grassAO,
 
-      mossDiff: mossDiff,
+      mossDiff: mossDi,
     })
   );
 
-  const bushFlower = BushFlower();
-  const floorFlower = FloorFlower();
-  const rock = Rock();
 
   const meshRef = useRef();
 
@@ -145,9 +103,12 @@ const Surface = () => {
       terrainFolder.add(geomRef.current, "exponentiation", 1, 3);
       terrainFolder.add(geomRef.current, "lacunarity", 0, 10);
       terrainFolder.add(geomRef.current, "octaves", 0, 100);
-      terrainFolder.add(geomRef.current, "posX", 0, 100);
-      terrainFolder.add(geomRef.current, "posY", 0, 100);
+      terrainFolder.add(geomRef.current, "posX", 0, 10);
+      terrainFolder.add(geomRef.current, "posY", 0, 10);
       terrainFolder.add(geomRef.current, "maxHeight", 0, 100);
+      terrainFolder.add(materialRef.current, "scale", 0, 2);
+
+      console.log(materialRef.current)
 
       terrainFolder.open();
       guiRef.current = gui;
@@ -175,60 +136,7 @@ const Surface = () => {
           height={400}
           width={400}
         />
-        {/* <meshPhysicalMaterial map={rockNormal}/> */}
       </mesh>
-      <InstanceScattering
-        args={[1000, 5, 1000]}
-        position={[0, 2.5, 0]}
-        max={50}
-        mesh={meshRef}
-        scale={[2, 2, 2]}
-        instanceMaterial={bushFlower.material}
-      >
-        <primitive object={bushFlower.geometry} />
-      </InstanceScattering>
-      <InstanceScattering
-        args={[1000, 5, 1000]}
-        position={[0, 2.5, 0]}
-        max={100}
-        mesh={meshRef}
-        offsetY={0.1}
-        scale={[5, 5, 5]}
-        instanceMaterial={floorFlower.material}
-      >
-        <primitive object={floorFlower.geometry} />
-      </InstanceScattering>
-      <InstanceScattering
-        args={[1000, 10, 1000]}
-        position={[0, 10, 0]}
-        numInstances={10}
-        mesh={meshRef}
-        randomScale
-        randomRotation
-        instanceMaterial={rock.material}
-      >
-        <primitive object={rock.geometry} />
-      </InstanceScattering>
-
-      {/* <GrassChunk  
-        ref={grassRef}
-        mesh={meshRef}
-
-        area={[1000, 5, 1000]}  
-        position={[0, 2.5, 0]} 
-        
-        wireframe 
-        
-        width={.50}
-        height={2.0}
-        joints={12}
-        offsetY={.15}
-
-        distributionMap={grassDistributionMap}
-
-        max={50000}
-        density={100}
-      /> */}
     </>
   );
 };

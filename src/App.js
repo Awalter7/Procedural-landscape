@@ -1,7 +1,7 @@
 import "./styles.css";
 import * as THREE from "three";
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Grid, Environment } from "@react-three/drei";
+import { OrbitControls, Grid, Environment, useScroll } from "@react-three/drei";
 import Surface from "./components/terrain";
 
 export default function App() {

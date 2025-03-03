@@ -4,19 +4,8 @@ export class Terrain extends THREE.MeshPhysicalMaterial {
   constructor(props) {
     super(props);
 
-    this._amplitude = 1.71;
-    this._frequency = 0.247;
-    this._offset = 18.5;
-    this._height = 10.0;
-    this._exponentiation = 1.6;
-    this._lacunarity = 3.7;
-    this._octaves = 10;
-    this._posX = -33;
-    this._posY = -11;
-    this._maxDist = 100;
-    this._minDist = 50;
-
-    this._shader = null;
+    this.shader = null;
+    this._scale = 1;
 
     this.rockDiff = props.rockDiff;
     this.rockNormal = props.rockNormal;
@@ -42,128 +31,18 @@ export class Terrain extends THREE.MeshPhysicalMaterial {
     this.initilize();
   }
 
-  get amplitude() {
-    return this._amplitude;
+  get scale(){
+    return this._scale;
   }
 
-  set amplitude(value) {
-    this._amplitude = value;
-    this.shader.uniforms.uAmplitude.value = this._amplitude;
-  }
-
-  get frequency() {
-    return this._frequency;
-  }
-
-  set frequency(value) {
-    this._frequency = value;
-    this.shader.uniforms.uFrequency.value = this._frequency;
-  }
-
-  get offset() {
-    return this._offset;
-  }
-
-  set offset(value) {
-    this._offset = value;
-    this.shader.uniforms.uOffset.value = this._offset;
-  }
-
-  get height() {
-    return this._height;
-  }
-
-  set height(value) {
-    this._height = value;
-    this.shader.uniforms.uHeight.value = this._height;
-  }
-
-  get exponentiation() {
-    return this._exponentiation;
-  }
-
-  set exponentiation(value) {
-    this._exponentiation = value;
-    this.shader.uniforms.uExponentiation.value = this._exponentiation;
-  }
-
-  get lacunarity() {
-    return this._lacunarity;
-  }
-
-  set lacunarity(value) {
-    this._lacunarity = value;
-    this.shader.uniforms.uLacunarity.value = this._lacunarity;
-  }
-
-  get octaves() {
-    return this._octaves;
-  }
-
-  set octaves(value) {
-    this._octaves = value;
-    this.shader.uniforms.uOctaves.value = this._octaves;
-  }
-
-  get x() {
-    return this._octaves;
-  }
-
-  set x(value) {
-    this._octaves = value;
-    this.shader.uniforms.uOctaves.value = this._octaves;
-  }
-
-  get posX() {
-    return this._posX;
-  }
-
-  set posX(value) {
-    this._posX = value;
-    this.shader.uniforms.uPositionX.value = this._posX;
-  }
-
-  get posY() {
-    return this._posY;
-  }
-
-  set posY(value) {
-    this._posY = value;
-    this.shader.uniforms.uPositionY.value = this._posY;
-  }
-
-  get maxDist() {
-    return this._maxDist;
-  }
-
-  set maxDist(value) {
-    this._maxDist = value;
-    this.shader.uniforms.uMaxDist.value = this._maxDist;
-  }
-
-  get minDist() {
-    return this._minDist;
-  }
-
-  set minDist(value) {
-    this._minDist = value;
-    this.shader.uniforms.uMinDist.value = this._minDist;
+  set scale(value){
+    this._scale = value;
+    console.log(this.shader.uniforms);
+    this.shader.uniforms.uScale.value = value;
   }
 
   initilize() {
     this.onBeforeCompile = (shader) => {
-      shader.uniforms.uAmplitude = { value: this._amplitude };
-      shader.uniforms.uFrequency = { value: this.frequency };
-      shader.uniforms.uOffset = { value: this.offset };
-      shader.uniforms.uHeight = { value: this.height };
-      shader.uniforms.uExponentiation = { value: this.exponentiation };
-      shader.uniforms.uLacunarity = { value: this.lacunarity };
-      shader.uniforms.uOctaves = { value: this.octaves };
-      shader.uniforms.uPositionX = { value: this.posX };
-      shader.uniforms.uPositionY = { value: this.posY };
-      shader.uniforms.uMaxDist = { value: this.maxDist };
-      shader.uniforms.uMinDist = { value: this.minDist };
-
       shader.uniforms.uRockDiff = { value: this.rockDiff };
       shader.uniforms.uRockNormal = { value: this.rockNormal };
       shader.uniforms.uRockHeight = { value: this.rockHeight };
@@ -186,22 +65,16 @@ export class Terrain extends THREE.MeshPhysicalMaterial {
       shader.uniforms.uMossDiff = { value: this.mossDiff };
       shader.uniforms.uFaceBlendExponent = { value: 50.0 };
 
+      shader.uniforms.uScale = {value: this._scale};
+
       shader.vertexShader = shader.vertexShader.replace(
         `#include <clipping_planes_pars_vertex>`,
         `
                     #include <clipping_planes_pars_vertex>
             
                     varying vec2 vUv;
-                    uniform float uAmplitude;
-                    uniform float uFrequency;
-                    uniform float uOffset;
-                    uniform float uHeight;
-                    uniform float uExponentiation;
-                    uniform float uLacunarity;
-                    uniform int uOctaves;
-                    uniform float uPositionX;
-                    uniform float uPositionY;
                     uniform float uFaceBlendExponent;  // <-- NEW
+                    uniform float uScale;
             
                     uniform sampler2D uRockHeight;
                     uniform sampler2D uGroundHeight;
@@ -215,8 +88,6 @@ export class Terrain extends THREE.MeshPhysicalMaterial {
                     varying float noiseSum;
 
                     attribute float distToCrease;
-
-                    
             
                     vec3 orthogonal(vec3 v) {
                         return normalize(abs(v.x) > abs(v.z)
@@ -286,8 +157,8 @@ export class Terrain extends THREE.MeshPhysicalMaterial {
                     // Calculate x/z components and apply exponent
                     vec3 N = normalize(vWorldNormal);
 
-                    float xComp = pow(abs(N.x), uFaceBlendExponent / 2.0);
-                    float zComp = pow(abs(N.z), uFaceBlendExponent / 2.0);
+                    float xComp = pow(abs(N.x), uFaceBlendExponent);
+                    float zComp = pow(abs(N.z), uFaceBlendExponent);
 
                     float total = xComp + zComp + 1e-8;
                     
@@ -307,8 +178,10 @@ export class Terrain extends THREE.MeshPhysicalMaterial {
                     // Blend the rockHeight map to displace the vertex
                     vec3 xHeight = texture2D(uRockHeight, uvX).rgb;
                     vec3 zHeight = texture2D(uRockHeight, uvZ).rgb;
-                    vec3 rockHeight = xHeight * xWeight + zHeight * zWeight;
-                    vec3 groundHeight = texture2D(uGroundHeight, fract(vUv * 50.0)).rgb;
+
+                    vec3 rockHeight = (xHeight * xWeight + zHeight * zWeight) / 2.0;
+
+                    vec3 groundHeight = texture2D(uGroundHeight, fract((vUv * 50.0) * uScale)).rgb;
             
                     float heightScale = 10.0;
                     vec3 displacedPosition = position + normal * mix( (rockHeight * heightScale), groundHeight, facing);
@@ -339,6 +212,8 @@ export class Terrain extends THREE.MeshPhysicalMaterial {
                     varying vec2 vUv;
                     varying mat3 vTBN;
                     varying float noiseSum;
+
+                    uniform float uScale;
             
                     uniform sampler2D uRockNormal;
                     uniform sampler2D uRockDiff;
@@ -426,12 +301,12 @@ export class Terrain extends THREE.MeshPhysicalMaterial {
                     vec2 uvX = fract(vec2(
                         repeatInRange(vWorldPosition.x / 50.0, 0.0, 300.0),
                         repeatInRange(vWorldPosition.y / 50.0, 0.0, 300.0)
-                    ));
+                    ) * uScale);
 
                     vec2 uvZ = fract(vec2(
                         repeatInRange(vWorldPosition.z / 50.0, 0.0, 300.0),
                         repeatInRange(vWorldPosition.y / 50.0, 0.0, 300.0)
-                    ));
+                    ) * uScale);
             
                     vec3 xRockColor = texture2D(uRockDiff, uvX).rgb;
                     vec3 zRockColor = texture2D(uRockDiff, uvZ).rgb;
@@ -459,9 +334,9 @@ export class Terrain extends THREE.MeshPhysicalMaterial {
                     //float rockCrackFactor = derivativeScreenSpace(rockNormal, .3, 1.0);
 
 
-                    // vec3 stoneColor = texture2D(uStoneDiff, fract(vUv * 20.0)).rgb;
-                    // vec3 stoneNormal = texture2D(uStoneNormal, fract(vUv * 20.0)).rgb * 10.0;
-                    // vec3 stoneAOCC = texture2D(uStoneAOCC, fract(vUv * 20.0)).rgb;
+                    // vec3 stoneColor = texture2D(uStoneDiff, fract((vUv * 20.0) * uScale)).rgb;
+                    // vec3 stoneNormal = texture2D(uStoneNormal, fract((vUv * 20.0) * uScale)).rgb * 10.0;
+                    // vec3 stoneAOCC = texture2D(uStoneAOCC, fract((vUv * 20.0) * uScale)).rgb;
 
 
                     //moss calculations
@@ -471,7 +346,7 @@ export class Terrain extends THREE.MeshPhysicalMaterial {
                     vec3 mossColor = xMossColor * xWeight + zMossColor * zWeight;
 
                     if(rockColor.r < .2 && rockColor.g < .2 && rockColor.b < .2){
-                        mossColor = texture2D(uMossDiff, fract(vUv * 100.0)).rgb;
+                        mossColor = texture2D(uMossDiff, fract(vUv * (100.0 * uScale) )).rgb;
                         rockColor =  mossColor;
                     }
 
@@ -480,11 +355,11 @@ export class Terrain extends THREE.MeshPhysicalMaterial {
                     // rockColor = mix(rockColor, mossColor, rockCrackFactor); 
                     
 
-                    vec3 groundAOCC = texture2D(uGroundAOCC, fract(vUv * 100.0)).rgb;
-                    vec3 grassAOCC = texture2D(uGrassAOCC, fract(vUv * 100.0)).rgb;
+                    vec3 groundAOCC = texture2D(uGroundAOCC, fract(vUv * (100.0 * uScale))).rgb;
+                    vec3 grassAOCC = texture2D(uGrassAOCC, fract(vUv * (100.0 * uScale))).rgb;
 
-                    vec3 groundCol = texture2D(uGroundDiff, fract(vUv * 100.0)).rgb * groundAOCC;
-                    vec3 grassCol = texture2D(uGrassDiff, fract(vUv * 100.0)).rgb * grassAOCC;
+                    vec3 groundCol = texture2D(uGroundDiff, fract(vUv * (100.0 * uScale))).rgb * groundAOCC;
+                    vec3 grassCol = texture2D(uGrassDiff, fract(vUv * (100.0 * uScale))).rgb * grassAOCC;
 
 
                     groundCol = mix( groundCol, mossColor, noiseSum );
@@ -493,9 +368,8 @@ export class Terrain extends THREE.MeshPhysicalMaterial {
 
                     diffuseColor.rgb = finalCol;
 
-
-                    vec3 cloverNormal = texture2D(uGroundNormal, fract(vUv * 100.0)).rgb;
-                    vec3 grassNormal = texture2D(uGrassNormal, fract(vUv * 100.0)).rgb;
+                    vec3 cloverNormal = texture2D(uGroundNormal, fract(vUv * (100.0 * uScale))).rgb;
+                    vec3 grassNormal = texture2D(uGrassNormal, fract(vUv * (100.0 * uScale))).rgb;
 
                     cloverNormal = (cloverNormal * 2.0 - 1.0) * 4.0;
                     grassNormal = (grassNormal * 2.0 - 1.0) * 4.0;
