@@ -32,12 +32,12 @@ import grassAOCCColor from "../assets/terrain/textures/grass_03_ambient_occlusio
 
 import mossBaseCol from "../assets/terrain/textures/Moss_Color.jpg";
 
-import smallRock from "../Assets/3dModels/small_rock.glb";
-import bushFlower from "../Assets/3dModels/bush_flower.glb";
-import floorFlower from "../Assets/3dModels/floor_flower.glb";
+import smallRock from "../assets/terrain/models/small_rock.glb";
+import bushFlower from "../assets/terrain/models/bush_flower.glb";
+import floorFlower from "../assets/terrain/models/floor_flower.glb";
 
-import grassDistribution from "../Assets/Grass/Textures/distribution.png";
-import grassAlpha from "../Assets/Grass/Textures/alpha_mask.png";
+//import grassDistribution from "../assets/Grass/Textures/distribution.png";
+//import grassAlpha from "../Assets/Grass/Textures/alpha_mask.png";
 
 import { useGLTF } from "@react-three/drei";
 
@@ -91,11 +91,11 @@ const Surface = () => {
 
   const mossDiff = useLoader(THREE.TextureLoader, mossBaseCol);
 
-  const grassDistributionMap = useLoader(
-    THREE.TextureLoader,
-    grassDistribution
-  );
-  const grassAlphaMask = useLoader(THREE.TextureLoader, grassAlpha);
+  // const grassDistributionMap = useLoader(
+  //THREE.TextureLoader,
+  //grassDistribution
+  //);
+  //const grassAlphaMask = useLoader(THREE.TextureLoader, grassAlpha);
 
   const materialRef = useRef(
     new Terrain({
