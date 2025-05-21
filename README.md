@@ -1,7 +1,8 @@
 # Procedural-landscape
 
 A React application that generates a 3D procedural terrain in the browser using **React Three Fiber**, **Three.js**, and noise-based height mapping.
-
+---
+![image](https://github.com/user-attachments/assets/b3457ee9-1b03-4afd-a669-ab8dd9f73576)
 ---
 
 ## Table of Contents
